@@ -42,13 +42,28 @@ func main() {
 
 	// Get json without comments
 	cleanJsonBuilder := strings.Builder{}
-	for _, line := range strings.Split(string(data), "\n") {
-		isComment := strings.HasPrefix(strings.TrimSpace(line), "//")
+	lines := strings.Split(string(data), "\n")
+	lastLineIdx := len(lines) - 1
 
-		if !isComment {
-			cleanJsonBuilder.WriteString(line)
-			cleanJsonBuilder.WriteString("\n")
+	for idx, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		isComment := strings.HasPrefix(trimmed, "//")
+		hasEndingComma := strings.HasSuffix(trimmed, ",")
+
+		if isComment {
+			continue
 		}
+
+		if hasEndingComma && idx != lastLineIdx {
+			nextLineTrimmed := strings.TrimSpace(lines[idx+1])
+
+			if nextLineTrimmed == "}" || nextLineTrimmed == "}," {
+				line = strings.TrimRight(line, ",")
+			}
+		}
+
+		cleanJsonBuilder.WriteString(line)
+		cleanJsonBuilder.WriteString("\n")
 	}
 
 	cleanJson := cleanJsonBuilder.String()
@@ -72,6 +87,7 @@ func main() {
 			return
 		}
 	}
+
 }
 
 func fill(in string) string {

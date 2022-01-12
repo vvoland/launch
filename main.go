@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"strings"
 )
 
@@ -35,15 +34,21 @@ func run(args []string) int {
 	}
 
 	name := args[0]
-	path := ".vscode/launch.json"
+	launchPath := ".vscode/launch.json"
 	if len(args) > 1 {
-		path = args[1]
+		launchPath = args[1]
 	}
 
-	data, err := ioutil.ReadFile(path)
+	variables, err := CreateVariablesFromLaunchPath(launchPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 2
+	}
+
+	data, err := ioutil.ReadFile(launchPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Couldn't read launch.json: %v\n", err)
-		return 2
+		return 3
 	}
 
 	cleanJson := fixupJson(string(data))
@@ -52,12 +57,12 @@ func run(args []string) int {
 	err = json.Unmarshal([]byte(cleanJson), &launch)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Couldn't parse launch.json file: %v\n%s\n", err, cleanJson)
-		return 2
+		return 3
 	}
 
 	for _, config := range launch.Configurations {
 		if name == config.Name {
-			err := toShell(config, os.Stdout)
+			err := toShell(variables, config, os.Stdout)
 			if err != nil {
 				fmt.Println(err.Error())
 				return 4
@@ -67,7 +72,7 @@ func run(args []string) int {
 	}
 
 	fmt.Fprintf(os.Stderr, "%s not found\n", name)
-	return 3
+	return 5
 }
 
 var ErrUnsupportedOption = errors.New("configuration not supported")
@@ -78,17 +83,17 @@ var ErrUnsupportedOption = errors.New("configuration not supported")
 // - environment: sets the variables
 // - program: executes the specified binary
 // - request: only "launch" is supported
-func toShell(config Configuration, out io.Writer) error {
+func toShell(variables Variables, config Configuration, out io.Writer) error {
 	if config.Request != "launch" {
 		return ErrUnsupportedOption
 	}
 
 	fmt.Fprintln(out, "#!/bin/sh")
 	for name, value := range config.Env {
-		fmt.Fprintf(out, "export %s=\"%s\"\n", name, fill(value))
+		fmt.Fprintf(out, "export %s=\"%s\"\n", name, variables.Substitute(value))
 	}
 
-	program := fill(config.Program)
+	program := variables.Substitute(config.Program)
 
 	fmt.Fprintf(out, "./%s\n", program)
 	return nil
@@ -126,17 +131,4 @@ func fixupJson(liberallyWrittenJson string) string {
 	}
 
 	return cleanJsonBuilder.String()
-}
-
-func fill(in string) string {
-	out := in
-
-	// Replace ${workspaceFolder} with working directory
-	wd, err := os.Getwd()
-	if err == nil {
-		dir := path.Base(wd)
-		out = strings.ReplaceAll(out, "${workspaceFolder}", dir)
-	}
-
-	return out
 }
